@@ -17,7 +17,7 @@ namespace CSTrail
             IMyInterface proxy = MyProxyGenerator.CreateInterfaceProxyWithTarget(target, interceptor);
 
             // 调用代理对象的方法
-            var ret = proxy.MyMethod("aaa", "bar");
+            var ret = proxy.MyMethod("aaa", 1234);
             Console.WriteLine(ret);
             //Console.ReadLine();
         }
@@ -27,7 +27,7 @@ namespace CSTrail
 
     public interface IMyInterface
     {
-        string MyMethod(string foo, object bar);
+        string MyMethod(string foo, int bar);
     }
 
     public class MyInterceptor : IInterceptor
@@ -67,24 +67,6 @@ namespace CSTrail
 
         private static Type CreateProxyType<T>()
         {
-            /*
-             we want to create a type like this:
-             class FooProxy : DispatchProxy
-             {
-                 private object target;
-
-                 public void SetTarget(object target)
-                 {
-                     this.target = target;
-                 }
-
-                 protected override object Invoke(MethodInfo targetMethod, object[] args)
-                 {
-                     return targetMethod.Invoke(target, args);
-                 }
-             }
-             */
-
             // 创建动态程序集
             AssemblyName assemblyName = new AssemblyName("MyProxyAssembly");
             AssemblyBuilder assemblyBuilder = AssemblyBuilder.DefineDynamicAssembly(assemblyName, AssemblyBuilderAccess.Run);
@@ -118,7 +100,6 @@ namespace CSTrail
                 il.Emit(OpCodes.Castclass, typeof(MethodInfo));
                 // load this
                 il.Emit(OpCodes.Ldarg_0);
-                //TODO : load arguments here
                 // create object[] for arguments
                 LocalBuilder arr = il.DeclareLocal(typeof(object[]));
                 int nargs = methodInfo.GetParameters().Length;
@@ -132,15 +113,24 @@ namespace CSTrail
                     // 将数组索引推入栈顶
                     il.Emit(OpCodes.Ldc_I4, i);
                     // 将参数值加载到栈顶
-                    il.Emit(OpCodes.Ldarg, i + 1); // 这里假设参数是从 1 开始的
-                                                   // 如果需要装箱，可以在这里加入装箱指令
-                                                   // 存储数组元素
+                    ParameterInfo paramInfo = methodInfo.GetParameters()[i];
+                    Type paramType = paramInfo.ParameterType;
+                    if (paramType.IsValueType)
+                    {
+                        il.Emit(OpCodes.Ldarg, i + 1); // 加载参数值到栈顶
+                        il.Emit(OpCodes.Box, paramType); // 执行装箱操作
+                    }
+                    else
+                    {
+                        // 对于引用类型参数，直接加载参数值到栈顶
+                        il.Emit(OpCodes.Ldarg, i + 1);
+                    }
                     il.Emit(OpCodes.Stelem_Ref);
                 }
 
                 il.Emit(OpCodes.Ldloc, arr);
                 il.Emit(OpCodes.Call, typeof(MyProxyGenerator)
-                    .GetMethod("PrintMethod", BindingFlags.Public | BindingFlags.Static));
+                    .GetMethod(nameof(InvokeMethod), BindingFlags.Public | BindingFlags.Static));
                  
                 il.Emit(OpCodes.Ret);
             }
@@ -163,31 +153,13 @@ namespace CSTrail
             interceptorField.SetValue(proxy, interceptor);
         }
 
-        public static object PrintMethod(MethodInfo method, object proxy, object[] args)
+        public static object InvokeMethod(MethodInfo method, object proxy, object[] args)
         {
-            Console.WriteLine(method);
-            Console.WriteLine(proxy);
-            Console.WriteLine(args);
-
             IInterceptor interceptor = GetInterceptor(proxy);
             interceptor.BeforeInvoke();
-            Console.WriteLine(111);
             object result = method.Invoke(GetTarget(proxy), args);
             interceptor.AfterInvoke();
 
-
-            return result;
-        }
-
-        public static object InvokeMethod<T>(MethodInfo methodInfo, object[] allargs)
-        {
-            T proxy = (T)allargs[0];
-            object[] args = allargs.Skip(1).ToArray();
-            IInterceptor interceptor = GetInterceptor(proxy);
-            interceptor.BeforeInvoke();
-            Console.WriteLine(111);
-            object result = methodInfo.Invoke(GetTarget(proxy), args);
-            interceptor.AfterInvoke();
             return result;
         }
 
@@ -205,7 +177,7 @@ namespace CSTrail
     }
     public class MyClass : IMyInterface
     {
-        public string MyMethod(string foo, object bar)
+        public string MyMethod(string foo, int bar)
         {
             Console.WriteLine($"Executing MyMethod in MyClass, {foo}, {bar}");
             return "123";
