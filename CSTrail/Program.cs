@@ -84,7 +84,7 @@ namespace CSTrail
             il.Emit(OpCodes.Ldfld, targetField);
             il.Emit(OpCodes.Ldarg_1);
             il.Emit(OpCodes.Ldarg_2);
-            il.Emit(OpCodes.Call, typeof(MyProxyGenerator).GetMethod("InvokeMethod", BindingFlags.Public | BindingFlags.Static).MakeGenericMethod(typeof(T)));
+            il.Emit(OpCodes.Call, typeof(MyProxyGenerator).GetMethod(nameof(InvokeMethod), BindingFlags.Public | BindingFlags.Static));
             il.Emit(OpCodes.Ret);
             
             // implement interface methods
