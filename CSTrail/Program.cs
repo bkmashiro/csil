@@ -91,7 +91,7 @@ namespace CSTrail
             ModuleBuilder moduleBuilder = assemblyBuilder.DefineDynamicModule("MyDynamicModule");
 
             // 创建代理类
-            TypeBuilder typeBuilder = moduleBuilder.DefineType($"{typeof(T).Name}Proxy", TypeAttributes.Public, typeof(DispatchProxy), [typeof(T)]);
+            TypeBuilder typeBuilder = moduleBuilder.DefineType($"{typeof(T).Name}Proxy", TypeAttributes.Public, typeof(DispatchProxy), new Type[] { typeof(T) });
             // 添加私有字段
             FieldBuilder targetField = typeBuilder.DefineField("__target", typeof(T), FieldAttributes.Private);
             FieldBuilder interceptorField = typeBuilder.DefineField("__interceptor", typeof(IInterceptor), FieldAttributes.Private);
@@ -120,10 +120,25 @@ namespace CSTrail
                 il.Emit(OpCodes.Ldarg_0);
                 //TODO : load arguments here
                 // create object[] for arguments
-                //il.Emit(OpCodes.Newarr, typeof(object));
-                //LocalBuilder arrayLocal = il.DeclareLocal(typeof(object[]));
-                //il.Emit(OpCodes.Stloc, arrayLocal);
-                //il.Emit(OpCodes.Ldloca, arrayLocal);
+                LocalBuilder arr = il.DeclareLocal(typeof(object[]));
+                int nargs = methodInfo.GetParameters().Length;
+                il.Emit(OpCodes.Ldc_I4, nargs); // 将参数个数推入栈顶
+                il.Emit(OpCodes.Newarr, typeof(object)); // 创建一个 object[] 数组
+                il.Emit(OpCodes.Stloc, arr); // 将数组引用存储到本地变量 argsArray 中
+                for (int i = 0; i < nargs; i++)
+                {
+                    // 将数组引用加载到栈顶
+                    il.Emit(OpCodes.Ldloc, arr);
+                    // 将数组索引推入栈顶
+                    il.Emit(OpCodes.Ldc_I4, i);
+                    // 将参数值加载到栈顶
+                    il.Emit(OpCodes.Ldarg, i + 1); // 这里假设参数是从 1 开始的
+                                                   // 如果需要装箱，可以在这里加入装箱指令
+                                                   // 存储数组元素
+                    il.Emit(OpCodes.Stelem_Ref);
+                }
+
+                il.Emit(OpCodes.Ldloc, arr);
                 il.Emit(OpCodes.Call, typeof(MyProxyGenerator)
                     .GetMethod("PrintMethod", BindingFlags.Public | BindingFlags.Static));
                  
@@ -148,12 +163,20 @@ namespace CSTrail
             interceptorField.SetValue(proxy, interceptor);
         }
 
-        public static object PrintMethod(object method, object that, object args)
+        public static object PrintMethod(MethodInfo method, object proxy, object[] args)
         {
             Console.WriteLine(method);
-            Console.WriteLine(that);
+            Console.WriteLine(proxy);
             Console.WriteLine(args);
-            return null;
+
+            IInterceptor interceptor = GetInterceptor(proxy);
+            interceptor.BeforeInvoke();
+            Console.WriteLine(111);
+            object result = method.Invoke(GetTarget(proxy), args);
+            interceptor.AfterInvoke();
+
+
+            return result;
         }
 
         public static object InvokeMethod<T>(MethodInfo methodInfo, object[] allargs)
